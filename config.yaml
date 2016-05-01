@@ -1,0 +1,29 @@
+sliding_window:
+    change_every_words: 500
+    min_size: 1
+    avg_size: 4
+    max_size: 8
+
+training_process:
+    tensorboard_monitoring: True
+    tensorboard_logdir: 'logs'
+    tensorflow_threads: 5
+    workers_num: 10
+    queue_factor: 4
+    bootstrap_last_batch: True
+
+training_params:
+    epochs: 3
+    batch_size: 16
+    initial_learning_rate: 0.05
+
+negative_sampling:
+    samples_num: 10
+    alpha: 0.75
+    vocab_chunks_num: 1000
+
+vocabulary:
+    min_freq: 3
+
+embeddings:
+    size: 300

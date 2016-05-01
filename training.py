@@ -1,14 +1,9 @@
 # -*- coding: UTF-8 -*-
 
 from __future__ import division, unicode_literals
+
 import time
-
 import threading
-
-
-batches_processed = 0
-total_loss = 0
-prev_time = None
 
 
 class TrainingThread(threading.Thread):
@@ -27,20 +22,14 @@ class TrainingThread(threading.Thread):
         self.summary_writer = summary_writer
 
     def run(self):
-        global batches_processed, total_loss
-        global prev_time
-
-        if prev_time is None:
-            prev_time = time.time()
-
         while True:
             input_data = self.task_queue.get()
 
             if input_data is None:
                 break
 
-            epoch_num, text_num, mini_batch, noise = input_data
-            words, contexts = zip(*mini_batch)
+            batch_num, batch_data, noise = input_data
+            words, contexts = zip(*batch_data)
 
             feed_dict = {
                 self.model.input_words: words,
@@ -48,18 +37,9 @@ class TrainingThread(threading.Thread):
                 self.model.sampled_contexts: noise
             }
 
-            _, loss_value = self.session.run(
-                (
-                    self.model.train_op,
-                    self.model.loss
-                ),
-                feed_dict
-            )
+            self.session.run(self.model.train_op, feed_dict)
 
-            batches_processed += 1
-            total_loss += loss_value
-
-            if batches_processed % self.INFO_EVERY_N == 0:
+            if batch_num % self.INFO_EVERY_N == 0:
                 if self.summary_writer is not None:
                     current_summary = self.session.run(
                         self.model.summary_op, feed_dict
@@ -67,21 +47,46 @@ class TrainingThread(threading.Thread):
 
                     self.summary_writer.add_summary(
                         summary=current_summary,
-                        global_step=batches_processed
+                        global_step=batch_num
                     )
 
-                time_delta = time.time() - prev_time
 
-                print 'Epoch {}: {} texts / {} batches processed'.format(
-                    epoch_num, text_num, batches_processed
+class ConsoleMonitoringThread(threading.Thread):
+
+    def __init__(self, logger, check_interval, model, session):
+        super(ConsoleMonitoringThread, self).__init__()
+        self.daemon = True
+
+        self.logger = logger
+        self.check_interval = check_interval
+
+        self.model = model
+        self.session = session
+
+        self.working = True
+
+    def stop_monitoring(self):
+        self.working = False
+
+    def run(self):
+        prev_batches_num = 0
+
+        while self.working:
+            batches_num, avg_loss = self.session.run(
+                [self.model.batches_processed, self.model.average_loss]
+            )
+
+            self.logger.info(
+                'Total batches processed: {}; Average batch loss: {}'.format(
+                    batches_num, avg_loss
                 )
+            )
 
-                print 'Total time: {}. Average batch time: {}'.format(
-                    time_delta, time_delta / self.INFO_EVERY_N
+            self.logger.info(
+                'Batches per second: {}'.format(
+                    (batches_num - prev_batches_num) / self.check_interval
                 )
+            )
+            prev_batches_num = batches_num
 
-                print 'Average training loss: {}'.format(
-                    total_loss / (self.batch_size * batches_processed)
-                )
-
-                prev_time = time.time()
+            time.sleep(self.check_interval)
